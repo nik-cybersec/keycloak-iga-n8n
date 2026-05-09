@@ -238,4 +238,4 @@ This is a proof of concept. Production deployment would require:
 
 Nikunj — IAM & Identity Automation Engineer  
 Self-taught | Keycloak | n8n | Microsoft Entra | Zero Trust  
-[LinkedIn](www.linkedin.com/in/nikunj-a-3a5bb72ab) | [GitHub](https://github.com/nik-cybersec)
+[LinkedIn](https://www.linkedin.com/in/nikunj-a-3a5bb72ab) | [GitHub](https://github.com/nik-cybersec)
