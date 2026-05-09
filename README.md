@@ -1,3 +1,30 @@
+# Keycloak IGA System with n8n
+
+A functional Identity Governance & Administration (IGA) proof of concept built with Keycloak and n8n — demonstrating core concepts used in enterprise tools like SailPoint and Saviynt.
+
+## What is IGA?
+
+Identity Governance & Administration answers three critical questions about every user in an organization:
+- **Who has access to what?**
+- **Should they have that access?**
+- **How did they get it?**
+
+This project automates all three using open-source tools.
+
+## Architecture
+
+    Access Request (Webhook)
+            ↓
+       n8n Workflow Engine
+            ↓
+       SoD Policy Check ──── DENY (if conflict)
+            ↓
+       Keycloak REST API
+            ↓
+       Role Assigned / Revoked
+            ↓
+       Audit Log Entry
+
 ---
 
 ## Tech Stack
