@@ -1,0 +1,507 @@
+{
+  "name": "IGA-01-Access-Request-Entitlement",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "access-request",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -544,
+        80
+      ],
+      "id": "b3dddd7b-6d00-4495-8627-e81cf94d060c",
+      "name": "Webhook",
+      "webhookId": "9753a0cc-b909-457e-bba5-6fd5d5554f24"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Webhook').first().json.body;\nconst username = input.username;\nconst requestedRole = input.requested_role;\nconst requestedBy = input.requested_by;\nconst justification = input.justification;\n\nconst sodRules = {\n  \"manager\": \"security-analyst\",\n  \"security-analyst\": \"manager\"\n};\n\nreturn [{\n  json: {\n    username,\n    requestedRole,\n    requestedBy,\n    justification,\n    conflictingRole: sodRules[requestedRole] || null,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        80
+      ],
+      "id": "ca4db134-5276-41a3-ae0f-8db7f1b891b6",
+      "name": "SoD-Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn [{\n  json: {\n    status: \"DENIED\",\n    reason: \"SoD Violation — role conflicts with existing assignment\",\n    username: input.username,\n    requestedRole: input.requestedRole,\n    conflictingRole: input.conflictingRole,\n    timestamp: input.timestamp,\n    action: \"REQUEST_DENIED\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -16
+      ],
+      "id": "223b4010-38f4-4df1-a19f-ef85aefca6b5",
+      "name": "Deny-Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.31.217:8080/realms/master/protocol/openid-connect/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "admin-cli"
+            },
+            {
+              "name": "username",
+              "value": "admin"
+            },
+            {
+              "name": "password",
+              "value": "admin123"
+            },
+            {
+              "name": "grant_type",
+              "value": "password"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -368,
+        80
+      ],
+      "id": "76aa7668-3a5c-444f-a595-ed9bad6c1c70",
+      "name": "Get-Keycloak-Token"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users?username={{ $('SoD-Check').item.json.username }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Store-Token').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        960,
+        192
+      ],
+      "id": "bfb1ea11-8808-4ab2-b25f-28deabaffb40",
+      "name": "Get-User-Id"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "09bebe86-9201-487a-a0b2-36cce6d340ea",
+              "name": "token",
+              "value": "={{ $json.access_token }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -208,
+        80
+      ],
+      "id": "8d6e530c-f9d7-4a31-9773-be9bc68889e1",
+      "name": "Store-Token"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/roles/{{ $('SoD-Check').item.json.requestedRole }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Store-Token').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1168,
+        192
+      ],
+      "id": "88823334-e45d-46a2-8c9e-52c3bd584979",
+      "name": "Get-Role-Id"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users/{{ $('Get-Existing-Roles').first().json.id }}/role-mappings/realm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Refresh-Token').item.json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=[{\"id\":\"{{ $('Get-Role-Id').first().json.id }}\",\"name\":\"{{ $('Get-Role-Id').first().json.name }}\"}]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1616,
+        192
+      ],
+      "id": "ef9420a8-6a96-4fa4-bd51-fe3ea4135bfe",
+      "name": "Assign-Role",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users?username={{ $('SoD-Check').item.json.username }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Store-Token').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        160,
+        80
+      ],
+      "id": "59a1fa10-8cdb-4dbd-8042-62306de8437f",
+      "name": "Get-Existing-Roles"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users/{{ $('Get-Existing-Roles').first().json.id }}/role-mappings/realm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Store-Token').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        368,
+        80
+      ],
+      "id": "6098e063-8c59-4a91-8447-a8f763803911",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sodData = $('SoD-Check').first().json;\nconst existingRoles = $input.all();\n\nconst conflictingRole = sodData.conflictingRole;\n\n// Extract role names from existing roles\nconst existingRoleNames = existingRoles.map(item => item.json.name);\n\n// Check if conflicting role already exists\nconst hasConflict = conflictingRole && existingRoleNames.includes(conflictingRole);\n\nreturn [{\n  json: {\n    username: sodData.username,\n    requestedRole: sodData.requestedRole,\n    requestedBy: sodData.requestedBy,\n    justification: sodData.justification,\n    conflictingRole: conflictingRole,\n    existingRoles: existingRoleNames,\n    hasConflict: hasConflict,\n    timestamp: sodData.timestamp\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        80
+      ],
+      "id": "117225db-5200-4068-be11-5568365f1f98",
+      "name": "SoD-Conflict-Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f3ca6f1c-688b-4950-86bc-b97a9488d63d",
+              "leftValue": "={{ $json.hasConflict }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        736,
+        80
+      ],
+      "id": "5b7532da-b871-49e8-96c3-63fcea957b7c",
+      "name": "Conflict-Gate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.31.217:8080/realms/master/protocol/openid-connect/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "admin-cli"
+            },
+            {
+              "name": "username",
+              "value": "admin"
+            },
+            {
+              "name": "password",
+              "value": "admin123"
+            },
+            {
+              "name": "grant_type",
+              "value": "password"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1392,
+        192
+      ],
+      "id": "ed6237d5-8ffb-4f76-9305-15cdd1cae9c3",
+      "name": "Refresh-Token"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Deny-Request').first().json;\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    action: \"REQUEST_DENIED\",\n    username: input.username,\n    requestedRole: input.requestedRole,\n    conflictingRole: input.conflictingRole,\n    reason: input.reason,\n    decidedBy: \"SoD-Engine\",\n    status: \"DENIED\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        -16
+      ],
+      "id": "737a3910-52a7-4b22-a32c-410fc187bb3b",
+      "name": "Audit-Log-Deny"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sodData = $('SoD-Check').first().json;\nconst roleData = $('Get-Role-Id').first().json;\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    action: \"ROLE_ASSIGNED\",\n    username: sodData.username,\n    roleAssigned: roleData.name,\n    roleId: roleData.id,\n    requestedBy: sodData.requestedBy,\n    justification: sodData.justification,\n    decidedBy: \"Auto-Approved\",\n    status: \"SUCCESS\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        192
+      ],
+      "id": "86668ac4-5355-43ad-8480-7103f97057a2",
+      "name": "Audit-Log-Approve"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get-Keycloak-Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SoD-Check": {
+      "main": [
+        [
+          {
+            "node": "Get-Existing-Roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Keycloak-Token": {
+      "main": [
+        [
+          {
+            "node": "Store-Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-User-Id": {
+      "main": [
+        [
+          {
+            "node": "Get-Role-Id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store-Token": {
+      "main": [
+        [
+          {
+            "node": "SoD-Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Role-Id": {
+      "main": [
+        [
+          {
+            "node": "Refresh-Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Existing-Roles": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "SoD-Conflict-Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conflict-Gate": {
+      "main": [
+        [
+          {
+            "node": "Deny-Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get-User-Id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SoD-Conflict-Check1": {
+      "main": [
+        [
+          {
+            "node": "Conflict-Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh-Token": {
+      "main": [
+        [
+          {
+            "node": "Assign-Role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign-Role": {
+      "main": [
+        [
+          {
+            "node": "Audit-Log-Approve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deny-Request": {
+      "main": [
+        [
+          {
+            "node": "Audit-Log-Deny",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "81c6a38e-228a-4843-8d8c-52f02ea162fd",
+  "meta": {
+    "instanceId": "9f9b9115edc273b50a59a57a4e4d6556ebc858391c3c81ec12836714ab9a5ef9"
+  },
+  "id": "DOeQCBXhA6mA5CmU",
+  "tags": []
+}

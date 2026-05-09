@@ -1,0 +1,262 @@
+{
+  "name": "IGA-03-Auto-Revocation-Lifecycle",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revocation-request",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "8a285349-5c6a-4bfe-bbb5-cfb17e059b0c",
+      "name": "Webhook",
+      "webhookId": "d409062a-a08b-4efd-8623-7de9bd01865c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json.body;\n\nconst expiryMinutes = input.expiry_minutes || 1;\nconst expiryTime = new Date(Date.now() + expiryMinutes * 60 * 1000);\n\nreturn [{\n  json: {\n    username: input.username,\n    role: input.role,\n    requestedBy: input.requested_by,\n    reason: input.reason,\n    expiryMinutes: expiryMinutes,\n    expiryTime: expiryTime.toISOString(),\n    scheduledAt: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f1ac53a1-c487-4ab5-b11c-a728f5c8b66b",
+      "name": "Parse-Request"
+    },
+    {
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "={{ $json.expiryTime }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        -96
+      ],
+      "id": "11f07146-864d-49b9-96c5-2b398fd6f3e2",
+      "name": "Wait-Until-Expiry",
+      "webhookId": "ec989eb0-c848-41ea-a6e8-5f4c9d3eb180"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.31.217:8080/realms/master/protocol/openid-connect/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "admin-cli"
+            },
+            {
+              "name": "username",
+              "value": "admin"
+            },
+            {
+              "name": "password",
+              "value": "admin123"
+            },
+            {
+              "name": "grant_type",
+              "value": "password"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        608,
+        0
+      ],
+      "id": "05985ff0-931d-4e4d-ba99-db0b7e16a3dd",
+      "name": "Get-Token"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users?username={{ $('Parse-Request').item.json.username }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get-Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        832,
+        0
+      ],
+      "id": "a877d930-a551-42b1-980a-f311929d3515",
+      "name": "Get-User-Id"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/roles/{{ $('Parse-Request').item.json.role }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get-Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "39730476-b351-458d-b33e-3e6dd2968581",
+      "name": "Get-Role-Id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseData = $('Parse-Request').first().json;\nconst roleData = $('Get-Role-Id').first().json;\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    action: 'ROLE_REVOKED',\n    username: parseData.username,\n    roleRevoked: roleData.name,\n    roleId: roleData.id,\n    requestedBy: parseData.requestedBy,\n    reason: parseData.reason,\n    scheduledAt: parseData.scheduledAt,\n    expiryTime: parseData.expiryTime,\n    decidedBy: 'Auto-Revocation-Engine',\n    status: 'REVOKED'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "id": "ddea9abc-6cf3-462e-b9f1-a1e7214f11bd",
+      "name": "Audti-Log-Revocation"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users/{{ $('Get-User-Id').first().json.id }}/role-mappings/realm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get-Token').item.json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=[{\"id\":\"{{ $('Get-Role-Id').first().json.id }}\",\"name\":\"{{ $('Get-Role-Id').first().json.name }}\"}]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "42cad360-e5de-4ec0-ae28-429cd4d05be7",
+      "name": "Revoke-Role"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse-Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse-Request": {
+      "main": [
+        [
+          {
+            "node": "Get-Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait-Until-Expiry": {
+      "main": [
+        []
+      ]
+    },
+    "Get-Token": {
+      "main": [
+        [
+          {
+            "node": "Get-User-Id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-User-Id": {
+      "main": [
+        [
+          {
+            "node": "Get-Role-Id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Role-Id": {
+      "main": [
+        [
+          {
+            "node": "Revoke-Role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revoke-Role": {
+      "main": [
+        [
+          {
+            "node": "Audti-Log-Revocation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "553bc156-84fe-40c7-af12-30735ae03ffc",
+  "meta": {
+    "instanceId": "9f9b9115edc273b50a59a57a4e4d6556ebc858391c3c81ec12836714ab9a5ef9"
+  },
+  "id": "SD6wvMqDGiE0XjJO",
+  "tags": []
+}

@@ -1,0 +1,236 @@
+{
+  "name": "IGA-02-Access-Certification-Campaign",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -976,
+        -80
+      ],
+      "id": "a444b2f4-7a19-4413-b65a-49d5b040685a",
+      "name": "Weekly-Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.31.217:8080/realms/master/protocol/openid-connect/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "admin-cli"
+            },
+            {
+              "name": "username",
+              "value": "admin"
+            },
+            {
+              "name": "password",
+              "value": "admin123"
+            },
+            {
+              "name": "grant_type",
+              "value": "password"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -768,
+        -80
+      ],
+      "id": "228af65c-6f7d-4101-9b25-151554d23a87",
+      "name": "Get-Keycloak-Token"
+    },
+    {
+      "parameters": {
+        "url": "http://192.168.31.217:8080/admin/realms/TechCorp/users",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "max",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get-Keycloak-Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -560,
+        -80
+      ],
+      "id": "cbf5826c-6c7b-4d91-9657-835df936fd3c",
+      "name": "Get-All-Users"
+    },
+    {
+      "parameters": {
+        "url": "=http://192.168.31.217:8080/admin/realms/TechCorp/users/{{ $json.id }}/role-mappings/realm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get-Keycloak-Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -352,
+        -80
+      ],
+      "id": "41e2dbe0-2ada-4b5f-b877-71c92017e6b9",
+      "name": "Get-Roles"
+    },
+    {
+      "parameters": {
+        "jsCode": "const entries = $input.all();\n\nconst flagged = entries.filter(e => e.json.certificationStatus === 'FLAGGED');\nconst violations = entries.filter(e => e.json.certificationStatus === 'REQUIRES_REVIEW');\nconst clean = entries.filter(e => e.json.certificationStatus === 'CLEAN');\n\nconst report = {\n  reportId: `CERT-${Date.now()}`,\n  generatedAt: new Date().toISOString(),\n  period: 'Weekly Access Certification',\n  realm: 'TechCorp',\n  summary: {\n    totalUsers: entries.length,\n    flagged: flagged.length,\n    sodViolations: violations.length,\n    clean: clean.length\n  },\n  flaggedUsers: flagged.map(e => ({\n    username: e.json.username,\n    roles: e.json.roles,\n    reason: 'High privilege role — requires manager certification'\n  })),\n  sodViolations: violations.map(e => ({\n    username: e.json.username,\n    roles: e.json.roles,\n    violatingRoles: e.json.violatingRoles,\n    reason: 'SoD violation — immediate revocation recommended'\n  })),\n  recommendation: violations.length > 0\n    ? 'IMMEDIATE ACTION REQUIRED — SoD violations detected'\n    : 'Review flagged users with their managers'\n};\n\nreturn [{ json: report }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        -80
+      ],
+      "id": "3e90ac61-f99d-4eda-86ae-7c85f0c19627",
+      "name": "Generate-Report"
+    },
+    {
+      "parameters": {
+        "jsCode": "const users = $('Get-All-Users').all();\nconst roleItems = $('Get-Roles').all();\n\n// High privilege roles to flag\nconst highPrivilegeRoles = ['admin', 'manager', 'security-analyst'];\n\n// SoD rules\nconst sodRules = {\n  \"manager\": \"security-analyst\",\n  \"security-analyst\": \"manager\"\n};\n\n// Build user role map\nconst userRoleMap = {};\n\nfor (const user of users) {\n  const userId = user.json.id;\n  const username = user.json.username;\n  userRoleMap[userId] = {\n    username,\n    userId,\n    roles: []\n  };\n}\n\nfor (const roleItem of roleItems) {\n  const userId = roleItem.pairedItem?.item !== undefined \n    ? users[roleItem.pairedItem.item]?.json.id \n    : null;\n  \n  if (userId && userRoleMap[userId]) {\n    userRoleMap[userId].roles.push(roleItem.json.name);\n  }\n}\n\n// Analyze each user\nconst certificationReport = [];\n\nfor (const userId in userRoleMap) {\n  const userData = userRoleMap[userId];\n  const roles = userData.roles;\n  \n  const hasHighPrivilege = roles.some(r => highPrivilegeRoles.includes(r));\n  \n  // Check SoD violations\n  let sodViolation = false;\n  let violatingRoles = [];\n  for (const role of roles) {\n    if (sodRules[role] && roles.includes(sodRules[role])) {\n      sodViolation = true;\n      violatingRoles = [role, sodRules[role]];\n    }\n  }\n\n  certificationReport.push({\n    username: userData.username,\n    userId: userData.userId,\n    roles: roles,\n    hasHighPrivilege,\n    sodViolation,\n    violatingRoles,\n    certificationStatus: sodViolation ? 'REQUIRES_REVIEW' : hasHighPrivilege ? 'FLAGGED' : 'CLEAN',\n    timestamp: new Date().toISOString()\n  });\n}\n\nreturn certificationReport.map(entry => ({ json: entry }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -80
+      ],
+      "id": "c5621058-6a36-4aad-b581-d3ef385ef131",
+      "name": "Certification-Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "const report = $input.first().json;\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    action: 'CERTIFICATION_CAMPAIGN_COMPLETED',\n    reportId: report.reportId,\n    totalUsers: report.summary.totalUsers,\n    flagged: report.summary.flagged,\n    sodViolations: report.summary.sodViolations,\n    status: report.summary.sodViolations > 0 ? 'ACTION_REQUIRED' : 'REVIEW_REQUIRED',\n    recommendation: report.recommendation\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -80
+      ],
+      "id": "a0523c1d-ff30-4345-8066-7dc89a5d0035",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Weekly-Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get-Keycloak-Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Keycloak-Token": {
+      "main": [
+        [
+          {
+            "node": "Get-All-Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-All-Users": {
+      "main": [
+        [
+          {
+            "node": "Get-Roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get-Roles": {
+      "main": [
+        [
+          {
+            "node": "Certification-Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Certification-Analysis": {
+      "main": [
+        [
+          {
+            "node": "Generate-Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate-Report": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f8e8f6ae-b78c-42fb-ab46-e8f45e818109",
+  "meta": {
+    "instanceId": "9f9b9115edc273b50a59a57a4e4d6556ebc858391c3c81ec12836714ab9a5ef9"
+  },
+  "id": "Q9trA11i34pp3I4S",
+  "tags": []
+}
