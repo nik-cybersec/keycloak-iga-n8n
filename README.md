@@ -1,4 +1,8 @@
 # Keycloak IGA System with n8n
+[![Status](https://img.shields.io/badge/status-production--ready-brightgreen)]()
+[![n8n](https://img.shields.io/badge/n8n-0.268-blue)]()
+[![Keycloak](https://img.shields.io/badge/Keycloak-26.x-red)]()
+[![License](https://img.shields.io/badge/license-MIT-green)]()
 
 A functional Identity Governance & Administration (IGA) proof of concept built with Keycloak and n8n — demonstrating core concepts used in enterprise tools like SailPoint and Saviynt.
 
