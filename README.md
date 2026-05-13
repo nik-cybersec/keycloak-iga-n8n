@@ -30,6 +30,19 @@ This project automates all three using open-source tools.
        Audit Log Entry
 
 ---
+## ⚡ Quick Start (5 minutes)
+
+```bash
+# 1. Start Keycloak
+podman run -d --name keycloak -p 8080:8080 \
+  -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin123 \
+  quay.io/keycloak/keycloak:latest start-dev
+
+# 2. Start n8n
+docker run -d --name n8n -p 5678:5678 n8nio/n8n
+
+# 3. Import workflows from `workflows/` folder
+# 4. Send test request (see Workflow 1 example)
 
 ## Tech Stack
 
