@@ -250,6 +250,18 @@ This is a proof of concept. Production deployment would require:
 - **Zero Trust principles**
 
 ---
+## Compliance Framework Mapping
+
+This project directly addresses requirements from major compliance frameworks:
+
+| Control | Framework | Workflow |
+|---|---|---|
+| Segregation of Duties enforcement | SOX, ISO 27001 | Workflow 1 |
+| Access request audit trail | SOX, HIPAA, ISO 27001 | Workflow 1, 2, 3 |
+| Periodic access certification | ISO 27001, SOC 2 | Workflow 2 |
+| Privileged access flagging | PCI-DSS, ISO 27001 | Workflow 2 |
+| Automatic access revocation | HIPAA, SOC 2 | Workflow 3 |
+| Time-bound access control | Zero Trust, NIST | Workflow 3 |
 
 ## Author
 
